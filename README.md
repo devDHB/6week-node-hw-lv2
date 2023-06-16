@@ -12,16 +12,20 @@ post.js
 댓글 작성, 조회, 수정, 삭제
 
 date.js
+
 오늘 날짜, 현재 시각 스트링 변환
 
 ## DataBase
 postCount.js
+
 게시글 db정의
 
 comment.js
+
 댓글 db정의
 
 postCount.js
+
 게시글의 postId 값에 할당할 db정의
 
 ## 미흡한 점
@@ -30,6 +34,8 @@ postCount.js
 
 ## 느낀점
 1. mongoDB 활용 하는데 어려움을 겪음
+
    => mongoDB에서 활용하는 함수들을 계속 공부하며 활용
 2. async/await 문법에 대한 이해가 부족
+
    => 동기/비동기 처리, promise 문법에 대해 공부
