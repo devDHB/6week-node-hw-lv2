@@ -7,6 +7,7 @@ node.js, express, mongoDB를 활용하여 로그인 기능이 없는 백엔드 �
 
 ## API , 모듈
 post.js
+
 게시글 작성, 조회, 수정, 삭제
 댓글 작성, 조회, 수정, 삭제
 
