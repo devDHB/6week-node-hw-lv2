@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const commentSchema = new mongoose.Schema({
   postId: {
-    type: Number,
+    type: String,
     required: true,
   },
   user: {
