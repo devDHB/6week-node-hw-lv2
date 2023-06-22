@@ -3,6 +3,7 @@ const app = express();
 const port = 3000;
 
 // 라우터 연결
+// 게시글 댓글 라우터
 const postsRouter = require("./routes/posts");
 
 // 스키마 불러오기 index.js
