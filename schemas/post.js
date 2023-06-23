@@ -6,11 +6,13 @@ const postSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
-  user: {
+  // userID 추가
+  userId: {
     type: String,
-    required: true,
+    required: true, // 특정 유저를 구분해야하기 때문에 필수
   },
-  password: {
+  // user -> nickname 으로 변경
+  nickname: {
     type: String,
     required: true,
   },

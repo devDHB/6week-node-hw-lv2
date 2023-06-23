@@ -7,16 +7,20 @@ const router = express.Router();
 const Post = require("../schemas/post");
 const PostCount = require("../schemas/postCount");
 const Comment = require("../schemas/comment");
+
+// 특정한 사용자만 이용할수 있게 미들웨어 불러오기
+const authMiddleware = require("../middlewars/auth-middleware");
+
 const { isValidObjectId } = require("mongoose");
 
-// 전체 게시글 조회 GET
+// 전체 게시글 조회 API GET
 router.get("/posts/", async (req, res) => {
   // 날짜 내림차순
   const posts = await Post.find().sort({ createdAt: -1 });
   const results = posts.map((post) => {
     return {
       postId: post.postId,
-      user: post.user,
+      nickname: post.nickname,
       title: post.title,
       createdAt: post.createdAt,
     };
@@ -26,12 +30,16 @@ router.get("/posts/", async (req, res) => {
   });
 });
 
-// 게시글 추가 POST
-router.post("/posts/", async (req, res) => {
-  const { user, password, title, content } = req.body;
+// 게시글 작성 API POST
+// 유저 인증 이후 작성 가능하도록 authMiddleware 미들웨어 추가
+router.post("/posts/", authMiddleware, async (req, res) => {
+  // 유저 정보 받기
+  const { userId, nickname } = res.locals.user;
+
+  const { title, content } = req.body;
 
   // # 400 body 또는 params를 입력받지 못한 경우
-  if (!user || !password || !title || !content) {
+  if (!nickname || !title || !content) {
     res.status(400).json({ message: "데이터 형식이 올바르지 않습니다" });
   } else {
     // 현재 날짜 저장
@@ -52,8 +60,9 @@ router.post("/posts/", async (req, res) => {
     let dateTime = date + " " + time;
     const createdAt = dateTime;
 
-    const existsPosts = await Post.find();
-    if (existsPosts.length) {
+    // 해당 유저의 userId를 갖고, 게시글 조회
+    const existsPosts = await Post.findOne({ userId });
+    if (existsPosts) {
       await PostCount.updateOne(
         { name: "Post Count" },
         { $inc: { postCount: 1 } }
@@ -70,10 +79,11 @@ router.post("/posts/", async (req, res) => {
     // post id 저장
     let postId = count[0]["postCount"];
 
+    // 해당 유저의 userId를 갖고, 게시글 등록
     const createdPost = await Post.create({
       postId,
-      user,
-      password,
+      userId,
+      nickname,
       title,
       content,
       createdAt,
@@ -102,11 +112,13 @@ router.get("/posts/:postId", async (req, res) => {
   }
 });
 
-// 게시글 수정
-router.put("/posts/:postId/", async (req, res) => {
+// 게시글 수정 API
+// 유저 인증 이후 작성 가능하도록 authMiddleware 미들웨어 추가
+router.put("/posts/:postId/", authMiddleware, async (req, res) => {
+  // 유저 정보 받기
+  const { userId, nickname } = res.locals.user;
+
   const postsId = req.params.postId;
-  const password = req.body.password;
-  const user = req.body.user;
   const title = req.body.title;
   const content = req.body.content;
 
@@ -114,26 +126,27 @@ router.put("/posts/:postId/", async (req, res) => {
   if (
     isValidObjectId(postsId) ||
     !postsId ||
-    !user ||
-    !password ||
+    !userId ||
+    !nickname ||
     !title ||
     !content
   ) {
     res.status(400).json({ message: "데이터 형식이 올바르지 않습니다" });
   } else {
+    // 해당 유저의 정보를 가진 글이 있는지 확인
     const existsPosts = await Post.findOne({
+      userId: userId,
       postId: postsId,
     });
     // # 404 _postId에 해당하는 게시글이 존재하지 않을 경우
     if (!existsPosts) {
-      res.status(400).json({ message: "게시글이 없습니다" });
+      res.status(400).json({ message: "게시글이 존재하지 않습니다" });
     } else {
-      if (existsPosts.password === password) {
+      if (existsPosts.userId === userId) {
         await Post.updateOne(
           { postId: postsId },
           {
             $set: {
-              user: user,
               title: title,
               content: content,
             },
@@ -141,41 +154,50 @@ router.put("/posts/:postId/", async (req, res) => {
         );
         res.status(200).json({ message: "게시글을 수정하였습니다" });
       } else {
-        res.status(400).json({ message: "비밀 번호가 일치하지 않습니다" });
+        res.status(400).json({ message: "권한이 없습니다" });
       }
     }
   }
 });
 
-// 게시글 삭제
-router.delete("/posts/:postId", async (req, res) => {
+// 게시글 삭제 API
+// 유저 인증 이후 작성 가능하도록 authMiddleware 미들웨어 추가
+router.delete("/posts/:postId", authMiddleware, async (req, res) => {
+  // 유저 정보 받기
+  const { userId, nickname } = res.locals.user;
+
   const postsId = req.params.postId;
-  const password = req.body.password;
 
   // # 400 body 또는 params를 입력받지 못한 경우
-  if (isValidObjectId(postsId) || !postsId || !password) {
+  if (isValidObjectId(postsId) || !postsId || !userId || !nickname) {
     res.status(400).json({ message: "데이터 형식이 올바르지 않습니다" });
   } else {
+    // 해당 유저의 정보를 가진 글이 있는지 확인
     const existsPosts = await Post.findOne({
+      userId: userId,
       postId: postsId,
     });
     // # 404 _postId에 해당하는 게시글이 존재하지 않을 경우
     if (!existsPosts) {
       res.status(400).json({ message: "존재하지 않는 게시글입니다" });
     }
-    if (existsPosts.password === password) {
+    if (existsPosts.userId === userId) {
       await Post.deleteOne({ postId: postsId });
       res.json({ message: "게시글을 삭제하였습니다" });
     } else {
-      res.status(400).json({ message: "비밀 번호가 일치하지 않습니다" });
+      res.status(400).json({ message: "권한이 없습니다" });
     }
   }
 });
 
-// 게시글에 코멘트 추가하기
-router.post("/comments/:postId/", async (req, res) => {
+// 게시글에 코멘트 작성 API
+// 유저 인증 이후 작성 가능하도록 authMiddleware 미들웨어 추가
+router.post("/comments/:postId/", authMiddleware, async (req, res) => {
+  // 유저 정보 받기
+  const { userId, nickname } = res.locals.user;
+
   const postsId = req.params.postId;
-  const { user, password, content } = req.body;
+  const { content } = req.body;
   // 현재 날짜 저장
   let today = new Date();
 
@@ -194,10 +216,11 @@ router.post("/comments/:postId/", async (req, res) => {
   let dateTime = date + " " + time;
   const createdAt = dateTime;
 
-  const existsPosts = await Post.findOne({ postId: postsId });
+  // 해당 유저의 정보를 가진 글이 있는지 확인
+  const existsPosts = await Post.findOne({ userId: userId, postId: postsId });
 
   // # 400 body 또는 params를 입력받지 못한 경우
-  if (isValidObjectId(postsId) || !postsId || !user || !password) {
+  if (isValidObjectId(postsId) || !postsId || !userId || !nickname) {
     res.status(400).json({ message: "데이터 형식이 올바르지 않습니다" });
     // # 400 body의 content를 입력받지 못한 경우
   } else if (!content) {
@@ -209,8 +232,8 @@ router.post("/comments/:postId/", async (req, res) => {
     const postId = existsPosts.postId;
     const createdComment = await Comment.create({
       postId,
-      user,
-      password,
+      userId,
+      nickname,
       content,
       createdAt,
     });
@@ -218,7 +241,7 @@ router.post("/comments/:postId/", async (req, res) => {
   }
 });
 
-// 댓글 목록 조회
+// 포스트 id별 댓글 목록 조회 API
 router.get("/comments/:postId", async (req, res) => {
   const postsId = req.params.postId;
   // 날짜 내림차순 정렬
@@ -234,8 +257,7 @@ router.get("/comments/:postId", async (req, res) => {
       return {
         postId: comment.postId,
         commentId: comment._id,
-        user: comment.user,
-        password: comment.password,
+        nickname: comment.nickname,
         content: comment.content,
         createdAt: comment.createdAt,
       };
@@ -247,26 +269,31 @@ router.get("/comments/:postId", async (req, res) => {
   }
 });
 
-// 댓글 수정
-router.put("/comments/:commentId/", async (req, res) => {
-  const commentId = req.params.commentId;
-  const { password, content } = req.body;
+// 댓글 수정 API
+// 유저 인증 이후 작성 가능하도록 authMiddleware 미들웨어 추가
+router.put("/comments/:commentId/", authMiddleware, async (req, res) => {
+  // 유저 정보 받기
+  const { userId, nickname } = res.locals.user;
 
-  // # 400 body의 content를 입력받지 못한 경우
-  if (!isValidObjectId(commentId) || !commentId) {
+  const commentId = req.params.commentId;
+  const { content } = req.body;
+
+  if (!isValidObjectId(commentId) || !commentId || !userId || !nickname) {
     res.status(400).json({ message: "데이터 형식이 올바르지 않습니다" });
+    // # 400 body의 content를 입력받지 못한 경우
   } else if (!content) {
     res.status(400).json({ message: "댓글 내용을 입력해주세요" });
   } else {
-    // # 400 body 또는 params를 입력받지 못한 경우
-    const existsComments = await Comment.findOne({ _id: commentId });
+    const existsComments = await Comment.findOne({
+      _id: commentId,
+    });
     // # 404 _commentId에 해당하는 댓글이 존재하지 않을 경우
     if (!existsComments) {
-      res.status(400).json({ message: "댓글 조회에 실패하였습니다" });
+      res.status(404).json({ message: "댓글 조회에 실패하였습니다" });
     } else {
-      if (existsComments.password === password) {
+      if (existsComments.userId === userId) {
         await Comment.updateOne(
-          { _id: commentId, password },
+          { _id: commentId },
           {
             $set: {
               content: content,
@@ -275,19 +302,22 @@ router.put("/comments/:commentId/", async (req, res) => {
         );
         res.status(200).json({ message: "댓글을 수정하였습니다." });
       } else {
-        res.status(400).json({ message: "비밀번호가 틀렸습니다" });
+        res.status(400).json({ message: "권한이 없습니다" });
       }
     }
   }
 });
 
-// 게시글 삭제
-router.delete("/comments/:commentId/", async (req, res) => {
+// 댓글 삭제 API
+// 유저 인증 이후 작성 가능하도록 authMiddleware 미들웨어 추가
+router.delete("/comments/:commentId/", authMiddleware, async (req, res) => {
+  // 유저 정보 받기
+  const { userId, nickname } = res.locals.user;
+
   const commentId = req.params.commentId;
-  const password = req.body.password;
 
   // # 400 body 또는 params를 입력받지 못한 경우
-  if (!isValidObjectId(commentId) || !commentId || !password) {
+  if (!isValidObjectId(commentId) || !commentId || !userId || !nickname) {
     res.status(400).json({ message: "데이터 형식이 올바르지 않습니다" });
   } else {
     const existsComments = await Comment.findOne({ _id: commentId });
@@ -295,11 +325,11 @@ router.delete("/comments/:commentId/", async (req, res) => {
     if (!existsComments) {
       res.status(400).json({ message: "댓글 조회에 실패하였습니다" });
     } else {
-      if (existsComments.password === password) {
-        await Comment.deleteOne({ _id: commentId, password });
+      if (existsComments.userId === userId) {
+        await Comment.deleteOne({ _id: commentId });
         res.status(200).json({ message: "댓글을 삭제하였습니다." });
       } else {
-        res.status(400).json({ message: "비밀번호가 틀렸습니다" });
+        res.status(400).json({ message: "권한이 없습니다" });
       }
     }
   }
